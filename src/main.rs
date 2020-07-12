@@ -1,4 +1,3 @@
-extern crate anyhow;
 extern crate cpal;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -10,7 +9,6 @@ const PI: f32 = std::f32::consts::PI;
 fn main() {
     let (tx, rx) = mpsc::channel::<[f32; 3]>();
     std::thread::spawn(move || {
-        println!("spawned thread");
         let host = cpal::default_host();
         let device = host
             .default_output_device()
