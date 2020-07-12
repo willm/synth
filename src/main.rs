@@ -2,10 +2,13 @@ extern crate anyhow;
 extern crate cpal;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use std::convert::TryInto;
 use std::sync::mpsc;
 
-fn main() -> Result<(), anyhow::Error> {
-    let (tx, rx) = mpsc::channel::<f32>();
+const PI: f32 = std::f32::consts::PI;
+
+fn main() {
+    let (tx, rx) = mpsc::channel::<[f32; 3]>();
     std::thread::spawn(move || {
         println!("spawned thread");
         let host = cpal::default_host();
@@ -15,31 +18,37 @@ fn main() -> Result<(), anyhow::Error> {
         let config = device.default_output_config().unwrap();
 
         match config.sample_format() {
-            cpal::SampleFormat::F32 => run::<f32>(&device, &config.into(), rx).unwrap(),
-            cpal::SampleFormat::I16 => run::<i16>(&device, &config.into(), rx).unwrap(),
-            cpal::SampleFormat::U16 => run::<u16>(&device, &config.into(), rx).unwrap(),
+            cpal::SampleFormat::F32 => run::<f32>(&device, &config.into(), rx),
+            cpal::SampleFormat::I16 => run::<i16>(&device, &config.into(), rx),
+            cpal::SampleFormat::U16 => run::<u16>(&device, &config.into(), rx),
         }
     });
 
     loop {
-        let mut freq: String = String::new();
+        let mut freqs_line: String = String::new();
         std::io::stdin()
-            .read_line(&mut freq)
+            .read_line(&mut freqs_line)
             .expect("Failed to read stdin");
-        //print!("The freq is {}", freq);
-        let ifreq = str::parse::<f32>(&freq[..freq.len() - 1]).unwrap();
-        tx.send(ifreq).unwrap();
-    }
+        let freq_strings: Vec<&str> = freqs_line[..freqs_line.len() - 1].split(' ').collect();
+        let mut freqs: Vec<f32> = vec![];
+        for f in freq_strings {
+            freqs.push(str::parse::<f32>(&f).unwrap());
+        }
 
-    Ok(())
+        tx.send(freqs[0..3].try_into().expect("wrong number of freqs"))
+            .unwrap();
+    }
+}
+
+fn sin(sample_clock: f32, sample_rate: f32, freq: f32) -> f32 {
+    (sample_clock * freq * 2.0 * PI / sample_rate).sin()
 }
 
 fn run<T>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
-    rx: std::sync::mpsc::Receiver<f32>,
-) -> Result<(), anyhow::Error>
-where
+    rx: std::sync::mpsc::Receiver<[f32; 3]>,
+) where
     T: cpal::Sample,
 {
     let sample_rate = config.sample_rate.0 as f32;
@@ -47,28 +56,33 @@ where
 
     // Produce a sinusoid of maximum amplitude.
     let mut sample_clock = 0f32;
-    let pi = std::f32::consts::PI;
-    let mut freq = 440.0;
+    let mut freqs: [f32; 3] = [439.0, 440.0, 441.0];
     let mut next_value = move || {
-        freq = match rx.try_recv() {
+        freqs = match rx.try_recv() {
             // try_recv asynchronously tries to get a value without blocking
             Ok(v) => v,
-            _ => freq,
+            _ => freqs,
         };
         sample_clock = (sample_clock + 1.0) % sample_rate;
-        (sample_clock * freq * 2.0 * pi / sample_rate).sin()
+        let mut s = 0f32;
+        for &f in freqs.iter() {
+            s += sin(sample_clock, sample_rate, f);
+        }
+        s
     };
 
     let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
 
-    let stream = device.build_output_stream(
-        config,
-        move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
-            write_data(data, channels, &mut next_value)
-        },
-        err_fn,
-    )?;
-    stream.play()?;
+    let stream = device
+        .build_output_stream(
+            config,
+            move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
+                write_data(data, channels, &mut next_value)
+            },
+            err_fn,
+        )
+        .unwrap();
+    stream.play().unwrap();
     loop {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
