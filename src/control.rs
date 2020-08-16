@@ -27,7 +27,7 @@ pub fn read_midi_input(
       }
       MidiMessage::NoteOff { note } => {
         println!("NOTE OFF midi note {} {}Hz", note, midi_to_freq(note));
-        synth_sender.send([0.0, 0.0, 0.0])?;
+        //synth_sender.send([0.0, 0.0, 0.0])?;
       }
     };
   }

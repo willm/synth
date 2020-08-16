@@ -2,6 +2,7 @@ use midir::{Ignore, MidiInput, MidiInputConnection, MidiInputPort};
 use std::error::Error;
 use std::io::{stdin, stdout, Write};
 pub mod control;
+pub mod core;
 
 pub fn midi_to_freq(midi_note: u8) -> f32 {
   let exp = (f32::from(midi_note) + 36.376_316_562_295_91) / 12.0;
