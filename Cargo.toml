@@ -1,5 +1,5 @@
 [package]
-name = "rust-synth"
+name = "synth"
 version = "0.1.0"
 authors = ["Will Munn <will.munn@focusrite.com>"]
 edition = "2018"
@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 cpal = "0.12.0"
 rand = "0.7.3"
+midir = "0.6.2"

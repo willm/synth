@@ -1,13 +1,15 @@
 extern crate cpal;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use std::convert::TryInto;
+use std::error::Error;
 use std::sync::mpsc;
+use synth::{create_midi_connection, midi_to_freq, MidiMessage};
+mod control;
 
 const PI: f32 = std::f32::consts::PI;
 
-fn main() {
-    let (tx, rx) = mpsc::channel::<[f32; 3]>();
+fn main() -> Result<(), Box<dyn Error>> {
+    let (synth_sender, synth_receiver) = mpsc::channel::<[f32; 3]>();
     std::thread::spawn(move || {
         let host = cpal::default_host();
         let device = host
@@ -16,25 +18,16 @@ fn main() {
         let config = device.default_output_config().unwrap();
 
         match config.sample_format() {
-            cpal::SampleFormat::F32 => run::<f32>(&device, &config.into(), rx),
-            cpal::SampleFormat::I16 => run::<i16>(&device, &config.into(), rx),
-            cpal::SampleFormat::U16 => run::<u16>(&device, &config.into(), rx),
+            cpal::SampleFormat::F32 => run::<f32>(&device, &config.into(), synth_receiver),
+            cpal::SampleFormat::I16 => run::<i16>(&device, &config.into(), synth_receiver),
+            cpal::SampleFormat::U16 => run::<u16>(&device, &config.into(), synth_receiver),
         }
     });
 
-    loop {
-        let mut freqs_line: String = String::new();
-        std::io::stdin()
-            .read_line(&mut freqs_line)
-            .expect("Failed to read stdin");
-        let freq_strings: Vec<&str> = freqs_line[..freqs_line.len() - 1].split(' ').collect();
-        let mut freqs: Vec<f32> = vec![];
-        for f in freq_strings {
-            freqs.push(str::parse::<f32>(&f).unwrap());
-        }
-
-        tx.send(freqs[0..3].try_into().expect("wrong number of freqs"))
-            .unwrap();
+    if std::env::args().any(|arg| arg == "--midi-input") {
+        control::read_midi_input(synth_sender)
+    } else {
+        control::alternate_tones(synth_sender)
     }
 }
 
@@ -54,10 +47,10 @@ fn run<T>(
 
     // Produce a sinusoid of maximum amplitude.
     let mut sample_clock = 0f32;
-    let mut freqs: [f32; 3] = [439.0, 440.0, 441.0];
+    let mut freqs: [f32; 3] = [0.0, 0.0, 0.0];
     let mut next_value = move || {
         freqs = match rx.try_recv() {
-            // try_recv asynchronously tries to get a value without blocking
+            // try_recv tries to get a value without blocking
             Ok(v) => v,
             _ => freqs,
         };
